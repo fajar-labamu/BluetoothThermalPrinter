@@ -75,7 +75,6 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
         }catch (e: Exception){
           result.success("false")
           outputStream = null
-          ShowToast("Device was disconnected, reconnect")
           //Log.d(TAG, "state print: ${e.message}")
         }
       }else{
@@ -93,7 +92,7 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
       GlobalScope.launch(Dispatchers.Main) {
         if(outputStream == null) {
           outputStream = connect()?.also {
-            //result.success("true")
+            result.success("true")
             //Toast.makeText(this@MainActivity, "Connected to printer", Toast.LENGTH_SHORT).show()
           }.apply {
             result.success(state)
@@ -130,7 +129,6 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
         }catch (e: Exception){
           result.success("false")
           outputStream = null
-          ShowToast("Device was disconnected, reconnect")
           // Log.d(TAG, "state print: ${e.message}")
           /*var ex:String = e.message.toString()
           if(ex=="Broken pipe"){
@@ -175,7 +173,6 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
         }catch (e: Exception){
           result.success("false")
           outputStream = null
-          ShowToast("Device was disconnected, reconnect")
         }
       }else{
         result.success("false")
@@ -303,9 +300,6 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
     return listItems;
   }
 
-  private fun ShowToast(message: String){
-    Toast.makeText(mContext, message, Toast.LENGTH_SHORT).show()
-  }
 
   class setBytes(){
     companion object {
