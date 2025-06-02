@@ -18,6 +18,7 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry.Registrar
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -83,35 +84,48 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
       }
 
     } else if (call.method == "connectPrinter") {
-      var printerMAC = call.arguments.toString();
-      if(printerMAC.length>0){
-        mac = printerMAC;
-      }else{
+      val printerMAC = call.arguments.toString()
+      if (printerMAC.isEmpty()) {
         result.success("false")
+        return
       }
-      GlobalScope.launch(Dispatchers.Main) {
-        if(outputStream == null) {
-          outputStream = connect()?.also {
-            result.success("true")
-            //Toast.makeText(this@MainActivity, "Connected to printer", Toast.LENGTH_SHORT).show()
-          }.apply {
-            result.success(state)
-            //Log.d(TAG, "finished: Connection state:$state")
+      mac = printerMAC
+
+      if (outputStream != null) {
+        result.success("already_connected")
+        return
+      }
+
+      CoroutineScope(Dispatchers.Main).launch {
+        try {
+          outputStream = connect()
+          if (outputStream != null) {
+            result.success("connected")
+          } else {
+            result.success("connection_failed")
           }
+        } catch (e: Exception) {
+          result.error("CONNECT_ERROR", e.message, null)
         }
       }
-     }else if (call.method == "disconnectPrinter") {
-      GlobalScope.launch(Dispatchers.Main) {
-        if(outputStream != null) {
-          outputStream = disconnect()?.also {
-            //result.success("true")
-            //Toast.makeText(this@MainActivity, "Connected to printer", Toast.LENGTH_SHORT).show()
-          }.apply {
-            result.success("true")
-            //Log.d(TAG, "finished: Connection state:$state")
+      } else if (call.method == "disconnectPrinter") {
+        if (outputStream == null) {
+          result.success("already_disconnected")
+          return
+        }
+      
+        CoroutineScope(Dispatchers.Main).launch {
+          try {
+            val wasDisconnected = disconnect()
+            if (wasDisconnected) {
+              result.success("disconnected")
+            } else {
+              result.success("disconnect_failed")
+            }
+          } catch (e: Exception) {
+            result.error("DISCONNECT_ERROR", e.message, null)
           }
         }
-      }
      } else if (call.method == "writeBytes") {
 
       var lista: List<Int> = call.arguments as List<Int>
@@ -239,37 +253,35 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
     }
   }
 
-  private suspend fun disconnect(): OutputStream? {
+
+  private suspend fun disconnect(): Boolean {
     state = "false"
     return withContext(Dispatchers.IO) {
-      var outputStream: OutputStream? = outputStream
-      val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-      if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-        try {
-          if(mac.length>0) {
-          val bluetoothAddress = mac
-          val bluetoothDevice = bluetoothAdapter.getRemoteDevice(bluetoothAddress)
-          var bluetoothSocket = bluetoothDevice.createRfcommSocketToServiceRecord(
-                  UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-          )
-          bluetoothSocket.close()
-          //bluetoothSocket=null
-        }
-          Log.d(TAG, "Disconnected: ")
+      try {
+        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+        if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
+          if (mac.isNotEmpty()) {
+            val bluetoothDevice = bluetoothAdapter.getRemoteDevice(mac)
+            val bluetoothSocket = bluetoothDevice.createRfcommSocketToServiceRecord(
+              UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+            )
+            bluetoothSocket.close()
+          }
           outputStream?.close()
-          outputStream=null
-        } catch (e: Exception){
-          state = "false"
-          var code:Int = e.hashCode() //1535159 off //
-          Log.d(TAG, "connect: ${e.message} code $code")
-          outputStream?.close()
+          outputStream = null
+          Log.d(TAG, "Disconnected")
+          true
+        } else {
+          Log.d(TAG, "Adapter problem")
+          outputStream = null
+          false
         }
-      }else{
-        state = "false"
-        outputStream=null
-        Log.d(TAG, "Adapter problem")
+      } catch (e: Exception) {
+        Log.d(TAG, "disconnect: ${e.message}")
+        outputStream?.close()
+        outputStream = null
+        false
       }
-      outputStream
     }
   }
 
