@@ -25,6 +25,9 @@ import kotlinx.coroutines.withContext
 import java.io.OutputStream
 import java.util.*
 import androidx.annotation.NonNull
+import android.bluetooth.BluetoothSocket
+import java.io.IOException
+import kotlinx.coroutines.delay
 
 
 private const val TAG = "====> mio: "
@@ -216,41 +219,52 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
     return batteryLevel
   }
 
+
   private suspend fun connect(): OutputStream? {
-    state = "false"
-    return withContext(Dispatchers.IO) {
-      var outputStream: OutputStream? = null
-      val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-      if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-        try {
-          val bluetoothAddress = mac//"66:02:BD:06:18:7B" // replace with your device's address
-          val bluetoothDevice = bluetoothAdapter.getRemoteDevice(bluetoothAddress)
-          val bluetoothSocket = bluetoothDevice?.createRfcommSocketToServiceRecord(
-                  UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-          )
-          bluetoothAdapter.cancelDiscovery()
-          bluetoothSocket?.connect()
-          if (bluetoothSocket!!.isConnected) {
-            outputStream = bluetoothSocket!!.outputStream
-            state = "true"
-            //outputStream.write("\n".toByteArray())
-          }else{
-            state = "false"
-            Log.d(TAG, "Disconnected: ")
+      state = "false"
+      return withContext(Dispatchers.IO) {
+          val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+          if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+              Log.d(TAG, "Adapter not available or disabled")
+              return@withContext null
           }
-          //bluetoothSocket?.close()
-        } catch (e: Exception){
+  
+          val device = bluetoothAdapter.getRemoteDevice(mac)
+          bluetoothAdapter.cancelDiscovery()
+          delay(500) // Let discovery fully cancel
+  
+          // First attempt: standard UUID connection
+          try {
+              val uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+              val socket = device.createRfcommSocketToServiceRecord(uuid)
+              socket.connect()
+              if (socket.isConnected) {
+                  Log.d(TAG, "Connected via UUID")
+                  state = "true"
+                  return@withContext socket.outputStream
+              }
+          } catch (e: IOException) {
+              Log.e(TAG, "UUID connect failed: ${e.message}")
+          }
+  
+          // Fallback: Try channel 2 (commonly used by these printers)
+          try {
+              val fallbackSocket = device.javaClass
+                  .getMethod("createRfcommSocket", Int::class.java)
+                  .invoke(device, 2) as BluetoothSocket
+              fallbackSocket.connect()
+              if (fallbackSocket.isConnected) {
+                  Log.d(TAG, "Connected via channel 2 fallback")
+                  state = "true"
+                  return@withContext fallbackSocket.outputStream
+              }
+          } catch (e: Exception) {
+              Log.e(TAG, "Fallback connect failed: ${e.message}", e)
+          }
+  
           state = "false"
-          var code:Int = e.hashCode() //1535159 off //
-          Log.d(TAG, "connect: ${e.message} code $code")
-          outputStream?.close()
-        }
-      }else{
-        state = "false"
-        Log.d(TAG, "Adapter problem")
+          null
       }
-      outputStream
-    }
   }
 
 
